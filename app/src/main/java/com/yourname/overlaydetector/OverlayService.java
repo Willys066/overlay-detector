@@ -58,6 +58,76 @@ public class OverlayService extends Service {
     public void onDestroy() {
         super.onDestroy();
         if (mCaptureManager  != null) mCaptureManager.stop();
+        if (mOverlayVi
+
+git add .
+git commit -m "Calibrate HSV for ACU camo soldier"
+git push
+
+
+
+
+cat > app/src/main/java/com/yourname/overlaydetector/OverlayService.java << 'JAVAEOF'
+package com.yourname.overlaydetector;
+
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.Service;
+import android.content.Intent;
+import android.graphics.Bitmap;
+import android.graphics.PixelFormat;
+import android.os.Build;
+import android.os.IBinder;
+import android.view.WindowManager;
+
+import androidx.core.app.NotificationCompat;
+
+import org.opencv.android.OpenCVLoader;
+import org.opencv.core.Scalar;
+
+import java.util.ArrayList;
+import java.util.List;
+
+public class OverlayService extends Service {
+
+    public static final String EXTRA_RESULT_CODE = "result_code";
+    public static final String EXTRA_RESULT_DATA = "result_data";
+
+    private static final String NOTIF_CHANNEL_ID = "overlay_detector_channel";
+    private static final int    NOTIF_ID          = 42;
+
+    private ScreenCaptureManager      mCaptureManager;
+    private SilhouetteDetectionEngine mDetectionEngine;
+    private OverlayView               mOverlayView;
+    private WindowManager             mWindowManager;
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        if (!OpenCVLoader.initDebug()) { stopSelf(); return; }
+        startForeground(NOTIF_ID, buildNotification());
+        mDetectionEngine = new SilhouetteDetectionEngine(this);
+        setupEnemyProfiles();
+        mWindowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
+        setupOverlayView();
+    }
+
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
+        if (intent == null) return START_NOT_STICKY;
+        int    resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, -1);
+        Intent resultData = intent.getParcelableExtra(EXTRA_RESULT_DATA);
+        if (resultCode == -1 || resultData == null) { stopSelf(); return START_NOT_STICKY; }
+        mCaptureManager = new ScreenCaptureManager(this, this::onFrame);
+        mCaptureManager.start(resultCode, resultData);
+        return START_STICKY;
+    }
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        if (mCaptureManager  != null) mCaptureManager.stop();
         if (mOverlayView     != null) mWindowManager.removeView(mOverlayView);
         if (mDetectionEngine != null) mDetectionEngine.release();
     }
@@ -65,17 +135,37 @@ public class OverlayService extends Service {
     @Override public IBinder onBind(Intent intent) { return null; }
 
     private void setupEnemyProfiles() {
+
+        // Profil 1 — Camo ACU (gris clair / blanc cassé / patches clairs)
+        mDetectionEngine.addEnemyProfile(new SilhouetteDetectionEngine.EnemyProfile(
+            "Ennemi",
+            new Scalar(0,   0,  130),
+            new Scalar(180, 40, 220),
+            1500, 90_000, 1.5f, 5.0f
+        ));
+
+        // Profil 2 — Gilet tactique sombre (anthracite/gris foncé)
         mDetectionEngine.addEnemyProfile(new SilhouetteDetectionEngine.EnemyProfile(
             "Ennemi",
             new Scalar(0,   0,  20),
-            new Scalar(180, 80, 100),
-            800, 80_000, 1.5f, 5.0f
+            new Scalar(180, 60, 90),
+            800, 40_000, 1.2f, 4.0f
         ));
+
+        // Profil 3 — Peau (visage/mains exposés)
         mDetectionEngine.addEnemyProfile(new SilhouetteDetectionEngine.EnemyProfile(
             "Ennemi",
-            new Scalar(0,  40, 100),
-            new Scalar(25, 180, 255),
-            200, 8_000, 0.8f, 4.0f
+            new Scalar(0,  30,  120),
+            new Scalar(20, 160, 255),
+            150, 6_000, 0.7f, 3.5f
+        ));
+
+        // Profil 4 — Brun/beige (crosse AK, holster, équipement)
+        mDetectionEngine.addEnemyProfile(new SilhouetteDetectionEngine.EnemyProfile(
+            "Ennemi",
+            new Scalar(10,  40,  80),
+            new Scalar(25, 180, 200),
+            500, 30_000, 1.0f, 5.0f
         ));
     }
 
@@ -114,7 +204,7 @@ public class OverlayService extends Service {
         }
         return new NotificationCompat.Builder(this, NOTIF_CHANNEL_ID)
             .setContentTitle("Overlay Detector actif")
-            .setContentText("Détection silhouette en cours...")
+            .setContentText("Détection camo ACU en cours...")
             .setSmallIcon(android.R.drawable.ic_menu_view)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build();
